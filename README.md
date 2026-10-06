@@ -38,67 +38,77 @@ Linux 6.12.57, Buildroot glibc 2.39, 360 MB RAM). The outputs are real.
 ## 1. Get the two scripts onto the board
 
 This is the one step that cannot bootstrap itself: fetching needs something
-that can already fetch. The board does not need credentials for any of it —
-but it does need these two files to arrive somehow.
+that can already fetch. Nothing here needs credentials — the two files just
+have to arrive.
 
-**Every block below says which machine it runs on.** `$` is a host shell,
-`#` is the board.
+**Every block says which machine it runs on.** `host$` is a host shell,
+`board#` is the board.
 
-### Option A — serve them over plain HTTP
+### The board can do it alone
 
-The board's busybox `wget` cannot do TLS, which is the whole reason
-`https_get.sh` exists, but it is perfectly happy with `http://`. So download
-the scripts anywhere, and serve them on a port the board can reach.
+No share, no server, no host. `/bin/openssl` is a full OpenSSL even though no
+HTTP client on the device can use TLS, so paste this:
+
+```console
+board# mkdir -p /tmp/lab && cd /tmp/lab
+board# for f in https_get.sh fetch_board.sh; do
+>   printf "GET /itemhsu/onnx2novaic-98539-dist/main/$f HTTP/1.1\r\nHost: raw.githubusercontent.com\r\nConnection: close\r\n\r\n" \
+>   | openssl s_client -quiet -connect raw.githubusercontent.com:443 \
+>       -servername raw.githubusercontent.com 2>/dev/null > /tmp/r.$$
+>   n=$(sed -n 's/^Content-Length: *//p' /tmp/r.$$ | tr -d '\r' | head -1)
+>   tail -c "$n" /tmp/r.$$ > $f && rm -f /tmp/r.$$
+> done
+board# chmod +x *.sh && ls
+fetch_board.sh  https_get.sh
+```
+
+`tail -c $content_length` rather than looking for the end of the headers:
+busybox `grep` has no `-b`, so there is no byte offset to be had, and `sed` and
+`awk` are not safe on binary. `raw.githubusercontent.com` always sends a
+`Content-Length` and never redirects, which is why this is four lines and not
+forty.
+
+**This first fetch is not verified** — there is no trust store on the board
+yet, which is the next step. Once step 2 has installed one, you can confirm
+what you got:
+
+```console
+board# sh fetch_board.sh https_get.sh   verified_https_get.sh
+board# sh fetch_board.sh fetch_board.sh verified_fetch_board.sh
+board# cmp https_get.sh verified_https_get.sh && cmp fetch_board.sh verified_fetch_board.sh \
+>   && echo "both match a verified fetch"
+```
+
+### Or hand them over, if that is easier
+
+Download them on any machine and move them across by whatever the board has —
+a share, an SD card, a plain-HTTP server. The board's busybox `wget` has no
+TLS but is perfectly happy with `http://`:
 
 ```console
 host$ mkdir -p /tmp/serve && cd /tmp/serve
-host$ base=https://github.com/itemhsu/onnx2novaic-98539-dist/releases/download/v1
+host$ base=https://raw.githubusercontent.com/itemhsu/onnx2novaic-98539-dist/main
 host$ curl -sfLO $base/fetch_board.sh
 host$ curl -sfLO $base/https_get.sh
-host$ python3 -m http.server 8000
+host$ python3 -m http.server 8000      # address: ip -4 addr, or hostname -I
 ```
-
-Find that machine's address with `ip -4 addr` or `hostname -I`, then:
 
 ```console
 board# mkdir -p /tmp/lab && cd /tmp/lab
 board# wget -q http://192.168.1.50:8000/fetch_board.sh
 board# wget -q http://192.168.1.50:8000/https_get.sh
-board# chmod +x fetch_board.sh https_get.sh
-```
-
-Replace `192.168.1.50` with the serving machine's address.
-
-### Option B — copy them in over a share
-
-If the board already mounts something from the host — NFS, SMB, an SD card —
-put the two files there from the host side and copy them out on the board.
-
-```console
-host$ cd /srv/whatever-the-board-mounts
-host$ base=https://github.com/itemhsu/onnx2novaic-98539-dist/releases/download/v1
-host$ curl -sfLO $base/fetch_board.sh
-host$ curl -sfLO $base/https_get.sh
-```
-
-```console
-board# mkdir -p /tmp/lab && cd /tmp/lab
-board# cp /mnt/wherever/fetch_board.sh /mnt/wherever/https_get.sh .
 board# chmod +x *.sh
 ```
 
+Replace `192.168.1.50` with that machine's address.
+
 ### Either way
 
-Keep both files in the same directory and work from there:
-`fetch_board.sh` looks for `https_get.sh` beside itself.
+Keep both files in the same directory and work from there: `fetch_board.sh`
+looks for `https_get.sh` beside itself. Nothing below needs the host again.
 
-```console
-board# cd /tmp/lab
-board# ls
-fetch_board.sh  https_get.sh
-```
-
-Nothing below needs the host again.
+Both routes were run as written on an NT98539A from an empty `/tmp/lab`,
+through to a timing figure.
 
 ## 2. Install a CA bundle, once
 
