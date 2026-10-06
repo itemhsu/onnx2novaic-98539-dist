@@ -23,9 +23,9 @@ mkdir -p /tmp/lab && cd /tmp/lab && for f in https_get.sh fetch_board.sh; do pri
 
 Output:
 
-```text
+<pre>
 installed /etc/ssl/cacert.pem (188900 bytes, hash verified)
-```
+</pre>
 
 Stay in `/tmp/lab`: `fetch_board.sh` looks for `https_get.sh` beside itself.
 
@@ -37,10 +37,10 @@ sh fetch_board.sh ai3_bench && sh fetch_board.sh nvt_model-latest.bin model.bin
 
 Output:
 
-```text
+<pre>
 ai3_bench  72904 bytes
 model.bin  22771400 bytes
-```
+</pre>
 
 ## 3. Run it
 
@@ -50,14 +50,14 @@ model.bin  22771400 bytes
 
 Output:
 
-```text
+<pre>
 == net_proc over 20 iterations
    min      11.007 ms
    median   11.069 ms
    mean     11.060 ms
    max      11.176 ms
    out[0] first 16 bytes: f7 fd 74 f4 ce ff 91 f2 d9 02 a8 f9 d1 08 1c ff
-```
+</pre>
 
 That is it.
 
@@ -102,7 +102,7 @@ stage 5 opens it and reads the shapes. Neither starts an inference.
 
 Output:
 
-```text
+<pre>
   in  path=1879048192
      w=128 h=32 c=3 n=1 t=0 fmt=0x23180888 size=0 layout= scale=1 zp=0 name=image
        line_ofs=128 channel_ofs=4096 batch_ofs=12288 size_real=0
@@ -110,7 +110,7 @@ Output:
      w=1 h=384 c=128 n=1 t=1 fmt=0xa110010e size=98304 layout=whcn
      scale=0.90977 zp=65102 name=LayerNormalization_memory_Y
        line_ofs=2 channel_ofs=768 batch_ofs=98304 size_real=0
-```
+</pre>
 
 This is the only honest check that the tool and the model agree about anything:
 `name=image` and `128 x 32 x 3` are the model's own input, and the strides say
@@ -130,9 +130,9 @@ Dequantise with:
 
 Output:
 
-```text
+<pre>
 real = (raw - zero_point) * scale_ratio / 2**14
-```
+</pre>
 
 `scale_ratio` is declared `FLOAT` in the SDK's buffer struct and is not one: it
 carries the scale in Q14. Using `0.90977` instead of `0.90977 / 16384` is wrong
@@ -166,9 +166,9 @@ sh https_get.sh https://expired.badssl.com/ /dev/null
 
 Output:
 
-```text
+<pre>
 https_get: connection to expired.badssl.com failed (certificate? try --insecure to test)
-```
+</pre>
 
 ## If step 1 cannot reach GitHub
 
