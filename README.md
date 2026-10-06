@@ -38,45 +38,75 @@ Linux 6.12.57, Buildroot glibc 2.39, 360 MB RAM). The outputs are real.
 ## 1. Get the two scripts onto the board
 
 This is the one step that cannot bootstrap itself: fetching needs something
-that can already fetch. Pick whichever the board has.
+that can already fetch. The board does not need credentials for any of it —
+but it does need these two files to arrive somehow.
 
-**If a share is mounted** — copy them in from the host side:
+**Every block below says which machine it runs on.** `$` is a host shell,
+`#` is the board.
 
-```bash
-# on the host
-sh fetch.sh --dest /path/to/share board-tool fetch_board.sh
-sh fetch.sh --dest /path/to/share board-tool https_get.sh
+### Option A — serve them over plain HTTP
+
+The board's busybox `wget` cannot do TLS, which is the whole reason
+`https_get.sh` exists, but it is perfectly happy with `http://`. So download
+the scripts anywhere, and serve them on a port the board can reach.
+
+```console
+host$ mkdir -p /tmp/serve && cd /tmp/serve
+host$ base=https://github.com/itemhsu/onnx2novaic-98539-dist/releases/download/v1
+host$ curl -sfLO $base/fetch_board.sh
+host$ curl -sfLO $base/https_get.sh
+host$ python3 -m http.server 8000
 ```
 
-**Otherwise, serve them over plain HTTP.** The board's busybox `wget` cannot do
-TLS but is perfectly happy with `http://`:
+Find that machine's address with `ip -4 addr` or `hostname -I`, then:
 
-```bash
-# on any machine the board can reach
-mkdir -p /tmp/serve && cd /tmp/serve
-curl -sfLO https://github.com/itemhsu/onnx2novaic-98539-dist/releases/download/v1/fetch_board.sh
-curl -sfLO https://github.com/itemhsu/onnx2novaic-98539-dist/releases/download/v1/https_get.sh
-python3 -m http.server 8000
+```console
+board# mkdir -p /tmp/lab && cd /tmp/lab
+board# wget -q http://192.168.1.50:8000/fetch_board.sh
+board# wget -q http://192.168.1.50:8000/https_get.sh
+board# chmod +x fetch_board.sh https_get.sh
 ```
 
-```sh
-# on the board
-cd /tmp
-wget -q http://<that-machine>:8000/fetch_board.sh
-wget -q http://<that-machine>:8000/https_get.sh
-chmod +x fetch_board.sh https_get.sh
+Replace `192.168.1.50` with the serving machine's address.
+
+### Option B — copy them in over a share
+
+If the board already mounts something from the host — NFS, SMB, an SD card —
+put the two files there from the host side and copy them out on the board.
+
+```console
+host$ cd /srv/whatever-the-board-mounts
+host$ base=https://github.com/itemhsu/onnx2novaic-98539-dist/releases/download/v1
+host$ curl -sfLO $base/fetch_board.sh
+host$ curl -sfLO $base/https_get.sh
 ```
 
-Keep both in the same directory: `fetch_board.sh` looks for `https_get.sh`
-beside itself.
+```console
+board# mkdir -p /tmp/lab && cd /tmp/lab
+board# cp /mnt/wherever/fetch_board.sh /mnt/wherever/https_get.sh .
+board# chmod +x *.sh
+```
+
+### Either way
+
+Keep both files in the same directory and work from there:
+`fetch_board.sh` looks for `https_get.sh` beside itself.
+
+```console
+board# cd /tmp/lab
+board# ls
+fetch_board.sh  https_get.sh
+```
+
+Nothing below needs the host again.
 
 ## 2. Install a CA bundle, once
 
 The board has OpenSSL but ships no trust store — `/etc/openssl` holds a config
 and no certificates.
 
-```sh
-sh fetch_board.sh --bootstrap
+```console
+board# sh fetch_board.sh --bootstrap
 ```
 
 ```
@@ -93,8 +123,8 @@ update `CA_SHA256`.
 
 Everything after this is verified. A bad certificate is refused:
 
-```sh
-sh https_get.sh https://expired.badssl.com/ /dev/null
+```console
+board# sh https_get.sh https://expired.badssl.com/ /dev/null
 ```
 ```
 https_get: connection to expired.badssl.com failed (certificate? try --insecure to test)
@@ -102,8 +132,8 @@ https_get: connection to expired.badssl.com failed (certificate? try --insecure 
 
 ## 3. See what is available
 
-```sh
-sh fetch_board.sh --list
+```console
+board# sh fetch_board.sh --list
 ```
 
 ```
@@ -116,9 +146,9 @@ nvt_model-latest.bin
 
 ## 4. Fetch the tool and a model
 
-```sh
-sh fetch_board.sh ai3_bench
-sh fetch_board.sh nvt_model-latest.bin model.bin
+```console
+board# sh fetch_board.sh ai3_bench
+board# sh fetch_board.sh nvt_model-latest.bin model.bin
 ```
 
 ```
@@ -137,8 +167,8 @@ to go there before the earlier stages agree with expectations.
 
 **Stage 3 — what does the model want?** Queries only; the NPU is not started.
 
-```sh
-./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 3
+```console
+board# ./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 3
 ```
 
 ```
@@ -160,8 +190,8 @@ HDAL: Version: v3.500.1
 **Stage 5 — what shapes does it declare?** Opens the network and reads its
 input and output descriptions. Still no inference.
 
-```sh
-./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 5
+```console
+board# ./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 5
 ```
 
 ```
@@ -182,9 +212,9 @@ whole plane).
 
 ## 6. Time it
 
-```sh
-./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 \
-  --plugin-cpu -1 --warmup 3 --iters 20
+```console
+board# ./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 \
+         --plugin-cpu -1 --warmup 3 --iters 20
 ```
 
 ```
@@ -218,9 +248,9 @@ The last line matters: a run that times a no-op would print zeros there.
 To push a whole evaluation set through and keep every output, write one raw
 input file per sample and list them:
 
-```sh
-./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 \
-  --plugin-cpu -1 --batch list.txt --batch-in inputs --batch-out outputs
+```console
+board# ./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 \
+         --plugin-cpu -1 --batch list.txt --batch-in inputs --batch-out outputs
 ```
 
 Each input is raw bytes in the layout stage 5 reported — for the model above,
@@ -244,8 +274,8 @@ from the conversion that produced the model.
 
 A long run started over telnet dies when the session closes. Detach it:
 
-```sh
-nohup sh -c './ai3_bench ... > run.log 2>&1; echo done > run.done' >/dev/null 2>&1 &
+```console
+board# nohup sh -c './ai3_bench ... > run.log 2>&1; echo done > run.done' >/dev/null 2>&1 &
 ```
 
 ## Troubleshooting
