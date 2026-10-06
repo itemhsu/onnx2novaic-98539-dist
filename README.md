@@ -41,82 +41,76 @@ This is the one step that cannot bootstrap itself: fetching needs something
 that can already fetch. Nothing here needs credentials — the two files just
 have to arrive.
 
-**Every block says which machine it runs on.** `host$` is a host shell,
-`board#` is the board.
+> Every block below is meant to be copied as-is. There are no prompt
+> characters to strip, and no line is continued onto the next, because a shell
+> that receives half a `for` loop says `syntax error: unexpected "do"` and
+> leaves you worse off than before.
 
 ### The board can do it alone
 
 No share, no server, no host. `/bin/openssl` is a full OpenSSL even though no
-HTTP client on the device can use TLS, so paste this:
+HTTP client on the device can use TLS. **On the board**, paste this — it is one
+line:
 
-```console
-board# mkdir -p /tmp/lab && cd /tmp/lab
-board# for f in https_get.sh fetch_board.sh; do
->   printf "GET /itemhsu/onnx2novaic-98539-dist/main/$f HTTP/1.1\r\nHost: raw.githubusercontent.com\r\nConnection: close\r\n\r\n" \
->   | openssl s_client -quiet -connect raw.githubusercontent.com:443 \
->       -servername raw.githubusercontent.com 2>/dev/null > /tmp/r.$$
->   n=$(sed -n 's/^Content-Length: *//p' /tmp/r.$$ | tr -d '\r' | head -1)
->   tail -c "$n" /tmp/r.$$ > $f && rm -f /tmp/r.$$
-> done
-board# chmod +x *.sh && ls
+```sh
+mkdir -p /tmp/lab && cd /tmp/lab && for f in https_get.sh fetch_board.sh; do printf "GET /itemhsu/onnx2novaic-98539-dist/main/%s HTTP/1.1\r\nHost: raw.githubusercontent.com\r\nConnection: close\r\n\r\n" $f | openssl s_client -quiet -connect raw.githubusercontent.com:443 -servername raw.githubusercontent.com 2>/dev/null > /tmp/r; n=$(sed -n "s/^Content-Length: *//p" /tmp/r | tr -d "\r" | head -1); tail -c $n /tmp/r > $f; done; rm -f /tmp/r; chmod +x *.sh; ls
+```
+
+```
 fetch_board.sh  https_get.sh
 ```
 
-`tail -c $content_length` rather than looking for the end of the headers:
+It requests each file, reads `Content-Length`, and takes that many bytes from
+the end with `tail -c`, rather than looking for where the headers stop:
 busybox `grep` has no `-b`, so there is no byte offset to be had, and `sed` and
 `awk` are not safe on binary. `raw.githubusercontent.com` always sends a
-`Content-Length` and never redirects, which is why this is four lines and not
-forty.
+`Content-Length` and never redirects, which is why this fits on one line.
 
 **This first fetch is not verified** — there is no trust store on the board
-yet, which is the next step. Once step 2 has installed one, you can confirm
-what you got:
+yet, which is the next step. Once step 2 has installed one, confirm what you
+got. **On the board:**
 
-```console
-board# sh fetch_board.sh https_get.sh   verified_https_get.sh
-board# sh fetch_board.sh fetch_board.sh verified_fetch_board.sh
-board# cmp https_get.sh verified_https_get.sh && cmp fetch_board.sh verified_fetch_board.sh \
->   && echo "both match a verified fetch"
+```sh
+sh fetch_board.sh https_get.sh v_https_get.sh && sh fetch_board.sh fetch_board.sh v_fetch_board.sh && cmp https_get.sh v_https_get.sh && cmp fetch_board.sh v_fetch_board.sh && echo "both match a verified fetch"
 ```
 
 ### Or hand them over, if that is easier
 
-Download them on any machine and move them across by whatever the board has —
-a share, an SD card, a plain-HTTP server. The board's busybox `wget` has no
-TLS but is perfectly happy with `http://`:
+**On any machine with TLS:**
 
-```console
-host$ mkdir -p /tmp/serve && cd /tmp/serve
-host$ base=https://raw.githubusercontent.com/itemhsu/onnx2novaic-98539-dist/main
-host$ curl -sfLO $base/fetch_board.sh
-host$ curl -sfLO $base/https_get.sh
-host$ python3 -m http.server 8000      # address: ip -4 addr, or hostname -I
+```sh
+mkdir -p /tmp/serve && cd /tmp/serve && base=https://raw.githubusercontent.com/itemhsu/onnx2novaic-98539-dist/main && curl -sfLO $base/fetch_board.sh && curl -sfLO $base/https_get.sh && python3 -m http.server 8000
 ```
 
-```console
-board# mkdir -p /tmp/lab && cd /tmp/lab
-board# wget -q http://192.168.1.50:8000/fetch_board.sh
-board# wget -q http://192.168.1.50:8000/https_get.sh
-board# chmod +x *.sh
+Get that machine's address with `ip -4 addr` or `hostname -I`. Then **on the
+board**, with `192.168.1.50` replaced by it:
+
+```sh
+mkdir -p /tmp/lab && cd /tmp/lab && wget -q http://192.168.1.50:8000/fetch_board.sh && wget -q http://192.168.1.50:8000/https_get.sh && chmod +x *.sh && ls
 ```
 
-Replace `192.168.1.50` with that machine's address.
+The board's busybox `wget` has no TLS but is perfectly happy with `http://`.
+
+A share works just as well: put the two files on it from the host and `cp` them
+out on the board.
 
 ### Either way
 
 Keep both files in the same directory and work from there: `fetch_board.sh`
 looks for `https_get.sh` beside itself. Nothing below needs the host again.
 
-Both routes were run as written on an NT98539A from an empty `/tmp/lab`,
-through to a timing figure.
+Both routes were run as written on an NT98539A from an empty directory, through
+to a timing figure.
 
 ## 2. Install a CA bundle, once
 
 The board has OpenSSL but ships no trust store — `/etc/openssl` holds a config
 and no certificates.
 
-```console
-board# sh fetch_board.sh --bootstrap
+**On the board:**
+
+```sh
+sh fetch_board.sh --bootstrap
 ```
 
 ```
@@ -133,8 +127,10 @@ update `CA_SHA256`.
 
 Everything after this is verified. A bad certificate is refused:
 
-```console
-board# sh https_get.sh https://expired.badssl.com/ /dev/null
+**On the board:**
+
+```sh
+sh https_get.sh https://expired.badssl.com/ /dev/null
 ```
 ```
 https_get: connection to expired.badssl.com failed (certificate? try --insecure to test)
@@ -142,8 +138,10 @@ https_get: connection to expired.badssl.com failed (certificate? try --insecure 
 
 ## 3. See what is available
 
-```console
-board# sh fetch_board.sh --list
+**On the board:**
+
+```sh
+sh fetch_board.sh --list
 ```
 
 ```
@@ -156,9 +154,11 @@ nvt_model-latest.bin
 
 ## 4. Fetch the tool and a model
 
-```console
-board# sh fetch_board.sh ai3_bench
-board# sh fetch_board.sh nvt_model-latest.bin model.bin
+**On the board:**
+
+```sh
+sh fetch_board.sh ai3_bench
+sh fetch_board.sh nvt_model-latest.bin model.bin
 ```
 
 ```
@@ -177,8 +177,10 @@ to go there before the earlier stages agree with expectations.
 
 **Stage 3 — what does the model want?** Queries only; the NPU is not started.
 
-```console
-board# ./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 3
+**On the board:**
+
+```sh
+./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 3
 ```
 
 ```
@@ -200,8 +202,10 @@ HDAL: Version: v3.500.1
 **Stage 5 — what shapes does it declare?** Opens the network and reads its
 input and output descriptions. Still no inference.
 
-```console
-board# ./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 5
+**On the board:**
+
+```sh
+./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 5
 ```
 
 ```
@@ -222,9 +226,10 @@ whole plane).
 
 ## 6. Time it
 
-```console
-board# ./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 \
-         --plugin-cpu -1 --warmup 3 --iters 20
+**On the board:**
+
+```sh
+./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 --plugin-cpu -1 --warmup 3 --iters 20
 ```
 
 ```
@@ -258,9 +263,10 @@ The last line matters: a run that times a no-op would print zeros there.
 To push a whole evaluation set through and keep every output, write one raw
 input file per sample and list them:
 
-```console
-board# ./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 \
-         --plugin-cpu -1 --batch list.txt --batch-in inputs --batch-out outputs
+**On the board:**
+
+```sh
+./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 --plugin-cpu -1 --batch list.txt --batch-in inputs --batch-out outputs
 ```
 
 Each input is raw bytes in the layout stage 5 reported — for the model above,
@@ -284,8 +290,10 @@ from the conversion that produced the model.
 
 A long run started over telnet dies when the session closes. Detach it:
 
-```console
-board# nohup sh -c './ai3_bench ... > run.log 2>&1; echo done > run.done' >/dev/null 2>&1 &
+**On the board:**
+
+```sh
+nohup sh -c './ai3_bench ... > run.log 2>&1; echo done > run.done' >/dev/null 2>&1 &
 ```
 
 ## Troubleshooting
