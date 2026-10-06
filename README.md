@@ -19,9 +19,16 @@ Release [`v1`](../../releases/tag/v1):
 | `ai3_bench` | aarch64 benchmark: times `vendor_ai3_net_proc()` on a converted NPU model |
 | `https_get.sh` | fetches an https URL using `openssl s_client`, since no client on the board has TLS |
 | `fetch_board.sh` | pulls these assets onto the board; needs no credentials |
+| `nvt_model-latest.bin` | the most recent converted NPU model, whatever it was |
+| `nvt_model-<chip>-opmode<N>-<run>.bin` | the same model under a name that traces back to the conversion that produced it |
 
-Not here, and not going to be: source, the Novaic SDK, ONNX models, training
-data, or anything carrying customer weights.
+Everything here is overwritten by CI on each run. `nvt_model-latest.bin` is a
+rolling alias and says nothing about which chip or options produced it — use
+the run-numbered name when that matters, and read `convert_meta.json` from the
+corresponding workflow run for the full inputs.
+
+Not here, and not going to be: source, the Novaic SDK, float ONNX models, or
+training data.
 
 ## Using it on the board
 
@@ -37,9 +44,13 @@ sh fetch_board.sh --bootstrap
 
 # from then on
 sh fetch_board.sh ai3_bench
-./ai3_bench <model>.bin --cfg-model-info 1 --expect-input 128x32x3 \
+sh fetch_board.sh nvt_model-latest.bin model.bin
+./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 \
   --plugin-cpu -1 --warmup 3 --iters 30
 ```
+
+`--expect-input` is a gate, not decoration: `ai3_bench` stops before handing
+the NPU any address of its own unless the model reports the shape you named.
 
 The two scripts are the bootstrap problem: fetching them needs something that
 can already fetch. Copy them over once by whatever means the board has — a
