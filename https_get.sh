@@ -13,6 +13,11 @@
 # byte offset, and sed and awk are not safe on binary. The body is the last
 # Content-Length bytes of the stream, which tail -c gets exactly.
 #
+# Progress is reported on stderr while the body arrives -- 21 MB over s_client
+# takes long enough that a silent terminal looks like a hang. Only when stderr
+# is a terminal; under a redirect it stays quiet, so logs are not filled with
+# carriage returns.
+#
 # Certificates are verified against CA_BUNDLE (default /etc/ssl/cacert.pem).
 # --insecure skips that, which is only for bootstrapping the bundle itself --
 # and then only if you check what you got against a known hash.
@@ -39,14 +44,56 @@ verify_args() {
     fi
 }
 
+filesize() { wc -c < "$1" 2>/dev/null | tr -d ' ' || echo 0; }
+
+# A one-line progress report, rewritten in place. Only when stderr is a
+# terminal: under nohup or a redirect, carriage returns would turn the log into
+# one unreadable line.
+progress() {
+    _file=$1 _pid=$2
+    [ -t 2 ] || { wait "$_pid"; return $?; }
+    _total=0 _spin=0
+    while kill -0 "$_pid" 2>/dev/null; do
+        _have=$(filesize "$_file")
+        if [ "$_total" = 0 ]; then
+            # Content-Length arrives in the first packet, so this resolves
+            # almost at once and then stops being re-read.
+            _total=$(sed -n 's/^[Cc]ontent-[Ll]ength: *//p' "$_file" 2>/dev/null \
+                     | tr -d '\r' | head -1)
+            [ -n "$_total" ] || _total=0
+        fi
+        if [ "$_total" -gt 0 ] 2>/dev/null; then
+            _pct=$(( _have * 100 / _total ))
+            [ "$_pct" -gt 100 ] && _pct=100
+            _done=$(( _pct / 5 )) _bar= _k=0
+            while [ "$_k" -lt 20 ]; do
+                if [ "$_k" -lt "$_done" ]; then _bar="$_bar#"; else _bar="$_bar."; fi
+                _k=$(( _k + 1 ))
+            done
+            printf '\r  [%s] %3d%%  %s / %s bytes' \
+                "$_bar" "$_pct" "$_have" "$_total" >&2
+        else
+            _spin=$(( (_spin + 1) % 4 ))
+            printf '\r  connecting%.*s   ' "$_spin" "..." >&2
+        fi
+        sleep 1
+    done
+    wait "$_pid"
+    _rc=$?
+    printf '\r%-56s\r' '' >&2
+    return $_rc
+}
+
 # One request. Writes the raw response (headers + body) to $1.
 request() {
     _raw=$1 _host=$2 _port=$3 _path=$4 _method=$5
     printf '%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: nt98539a-board\r\nAccept: */*\r\nConnection: close\r\n\r\n' \
         "$_method" "$_path" "$_host" \
       | openssl s_client -quiet -connect "$_host:$_port" -servername "$_host" \
-          $(verify_args) 2>"$_raw.err" > "$_raw" || {
-            sed -n '1,4p' "$_raw.err" >&2; return 1; }
+          $(verify_args) 2>"$_raw.err" > "$_raw" &
+    _pid=$!
+    progress "$_raw" "$_pid" || {
+        sed -n '1,4p' "$_raw.err" >&2; return 1; }
     [ -s "$_raw" ] || return 1
 }
 

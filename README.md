@@ -39,8 +39,14 @@ Output:
 
 <pre>
 ai3_bench  72904 bytes
+  [#########...........]  46%  10514186 / 22771400 bytes
 model.bin  22771400 bytes
 </pre>
+
+The model is 21 MB and `openssl s_client` is not fast, so that takes a minute
+or two. The bar is there so a quiet terminal is not mistaken for a hang — it
+only appears when stderr is a terminal, so a redirected or `nohup`ed run keeps
+a clean log.
 
 ## 3. Run it
 
