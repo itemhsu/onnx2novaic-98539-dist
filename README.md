@@ -21,7 +21,9 @@ Fetches the two helper scripts and installs a CA bundle.
 mkdir -p /tmp/lab && cd /tmp/lab && for f in https_get.sh fetch_board.sh; do printf "GET /itemhsu/onnx2novaic-98539-dist/main/%s HTTP/1.1\r\nHost: raw.githubusercontent.com\r\nConnection: close\r\n\r\n" $f | openssl s_client -quiet -connect raw.githubusercontent.com:443 -servername raw.githubusercontent.com 2>/dev/null > /tmp/r; n=$(sed -n "s/^Content-Length: *//p" /tmp/r | tr -d "\r" | head -1); tail -c $n /tmp/r > $f; done; rm -f /tmp/r; chmod +x *.sh && sh fetch_board.sh --bootstrap
 ```
 
-```
+Output:
+
+```text
 installed /etc/ssl/cacert.pem (188900 bytes, hash verified)
 ```
 
@@ -33,7 +35,9 @@ Stay in `/tmp/lab`: `fetch_board.sh` looks for `https_get.sh` beside itself.
 sh fetch_board.sh ai3_bench && sh fetch_board.sh nvt_model-latest.bin model.bin
 ```
 
-```
+Output:
+
+```text
 ai3_bench  72904 bytes
 model.bin  22771400 bytes
 ```
@@ -44,7 +48,9 @@ model.bin  22771400 bytes
 ./ai3_bench model.bin --cfg-model-info 1 --expect-input 128x32x3 --plugin-cpu -1 --warmup 3 --iters 20
 ```
 
-```
+Output:
+
+```text
 == net_proc over 20 iterations
    min      11.007 ms
    median   11.069 ms
@@ -94,7 +100,9 @@ stage 5 opens it and reads the shapes. Neither starts an inference.
 ./ai3_bench model.bin --cfg-model-info 1 --plugin-cpu -1 --stage 5
 ```
 
-```
+Output:
+
+```text
   in  path=1879048192
      w=128 h=32 c=3 n=1 t=0 fmt=0x23180888 size=0 layout= scale=1 zp=0 name=image
        line_ofs=128 channel_ofs=4096 batch_ofs=12288 size_real=0
@@ -120,7 +128,9 @@ the model above. Each output is `<name>.out`, raw `int16`.
 
 Dequantise with:
 
-```
+Output:
+
+```text
 real = (raw - zero_point) * scale_ratio / 2**14
 ```
 
@@ -154,7 +164,9 @@ And that a bad certificate is refused:
 sh https_get.sh https://expired.badssl.com/ /dev/null
 ```
 
-```
+Output:
+
+```text
 https_get: connection to expired.badssl.com failed (certificate? try --insecure to test)
 ```
 
